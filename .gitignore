@@ -26,6 +26,7 @@ logs/
 .env
 *.env.local
 application.properties
+application-local.yml
 
 # Node
 node_modules/

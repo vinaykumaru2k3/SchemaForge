@@ -1,6 +1,8 @@
 package com.schemaforge.controller;
 
 import com.schemaforge.dto.OracleConnectionConfig;
+import com.schemaforge.exception.ApiErrorResponse;
+import jakarta.servlet.http.HttpServletRequest;
 import com.schemaforge.model.MigrationRun;
 import com.schemaforge.model.ParsedSchema;
 import com.schemaforge.service.LiveSchemaExtractor;
@@ -56,7 +58,8 @@ public class LiveConnectionController {
      * </pre>
      */
     @PostMapping("/connect")
-    public ResponseEntity<?> connectAndExtract(@Valid @RequestBody OracleConnectionConfig config) {
+    public ResponseEntity<?> connectAndExtract(@Valid @RequestBody OracleConnectionConfig config,
+                                               HttpServletRequest request) {
         log.info("Received live extraction request for schema [{}] at [{}:{}]",
                 config.getSchema(), config.getHost(), config.getPort());
 
@@ -66,9 +69,10 @@ public class LiveConnectionController {
             return new ResponseEntity<>(run, HttpStatus.CREATED);
 
         } catch (LiveExtractionException ex) {
-            log.error("Live extraction failed: {}", ex.getMessage());
+            log.warn("Live extraction failed: {}", ex.getMessage());
             return ResponseEntity.status(HttpStatus.BAD_GATEWAY)
-                    .body(java.util.Map.of("error", ex.getMessage()));
+                    .body(ApiErrorResponse.of(HttpStatus.BAD_GATEWAY.value(), "BAD_GATEWAY",
+                            ex.getMessage(), request.getRequestURI()));
 
         } finally {
             // Always zero-out the password regardless of outcome

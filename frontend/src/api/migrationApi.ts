@@ -1,19 +1,12 @@
-import axios from 'axios';
+import { api as client } from './client';
 import type { MigrationRun, AnalysisReport, ConvertedScript, ValidationResult } from '../types';
 
-const API_BASE_URL = `${import.meta.env.VITE_API_URL || ''}/api/v1/migrations`;
-
-const api = axios.create({
-  baseURL: API_BASE_URL,
-});
-
-api.interceptors.request.use((config) => {
-  const token = localStorage.getItem('token');
-  if (token) {
-    config.headers.Authorization = `Bearer ${token}`;
-  }
-  return config;
-});
+// Thin wrapper so the paths below stay relative to /migrations.
+const api = {
+  get: (url: string, config?: Parameters<typeof client.get>[1]) => client.get(`/migrations${url}`, config),
+  post: (url: string, data?: unknown, config?: Parameters<typeof client.post>[2]) =>
+    client.post(`/migrations${url}`, data, config),
+};
 
 export const migrationApi = {
   upload: async (file: File): Promise<MigrationRun> => {

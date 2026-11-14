@@ -1,9 +1,13 @@
 import React, { useState, useCallback } from 'react';
-import { useDropzone } from 'react-dropzone';
+import { useDropzone, type FileRejection } from 'react-dropzone';
 import { Upload, FileText, CheckCircle2, AlertCircle, Loader2, ArrowRight, Shield, Zap, FileOutput } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { migrationApi } from '../api/migrationApi';
+import { getApiErrorMessage } from '../api/client';
 import type { MigrationRun } from '../types';
+
+// Must match spring.servlet.multipart.max-file-size in application.yml.
+const MAX_UPLOAD_BYTES = 10 * 1024 * 1024;
 
 const steps = [
   { icon: Upload,     number: '01', title: 'Upload Schema',      desc: 'Drop your Oracle DDL scripts — tables, sequences, views, and indexes.' },
@@ -22,7 +26,18 @@ const UploadPage: React.FC = () => {
   const [success, setSuccess]   = useState<MigrationRun | null>(null);
   const navigate = useNavigate();
 
-  const onDrop = useCallback((acceptedFiles: File[]) => {
+  const onDrop = useCallback((acceptedFiles: File[], fileRejections: FileRejection[]) => {
+    if (fileRejections.length > 0) {
+      const code = fileRejections[0].errors[0]?.code;
+      setFile(null);
+      setSuccess(null);
+      setError(
+        code === 'file-too-large' ? 'File is larger than the 10 MB limit.'
+        : code === 'file-invalid-type' ? 'Only .sql files are accepted.'
+        : fileRejections[0].errors[0]?.message || 'File was rejected.'
+      );
+      return;
+    }
     if (acceptedFiles.length > 0) {
       setFile(acceptedFiles[0]);
       setError(null);
@@ -32,8 +47,9 @@ const UploadPage: React.FC = () => {
 
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
     onDrop,
-    accept: { 'text/x-sql': ['.sql'], 'application/sql': ['.sql'] },
+    accept: { 'text/x-sql': ['.sql'], 'application/sql': ['.sql'], 'text/plain': ['.sql'] },
     multiple: false,
+    maxSize: MAX_UPLOAD_BYTES,
   });
 
   const handleUpload = async () => {
@@ -45,9 +61,8 @@ const UploadPage: React.FC = () => {
       setSuccess(result);
       localStorage.setItem('lastRunId', result.id);
       setTimeout(() => navigate(`/dashboard?runId=${result.id}`), 1500);
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    } catch (err: any) {
-      setError(err.response?.data?.message || 'Failed to upload and parse SQL file.');
+    } catch (err) {
+      setError(getApiErrorMessage(err, 'Failed to upload and parse SQL file.'));
     } finally {
       setUploading(false);
     }

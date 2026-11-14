@@ -1,7 +1,10 @@
 package com.schemaforge.model;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
@@ -28,15 +31,18 @@ public class MigrationRun {
     @GeneratedValue(strategy = GenerationType.UUID)
     private UUID id;
 
-    @jakarta.persistence.ManyToOne
+    // Never serialised: the owning User entity includes the password hash.
+    @JsonIgnore
+    @jakarta.persistence.ManyToOne(fetch = jakarta.persistence.FetchType.LAZY)
     @jakarta.persistence.JoinColumn(name = "user_id")
     private User user;
 
     @Column(name = "file_name", nullable = false)
     private String fileName;
 
+    @Enumerated(EnumType.STRING)
     @Column(nullable = false)
-    private String status;
+    private RunStatus status;
 
     @Column(name = "table_count")
     private Integer tableCount;
@@ -50,8 +56,10 @@ public class MigrationRun {
     @Column(name = "raw_sql", columnDefinition = "TEXT")
     private String rawSql;
 
+    @Builder.Default
+    @Enumerated(EnumType.STRING)
     @Column(name = "source_type", nullable = false)
-    private String sourceType = "FILE"; // FILE or LIVE_DB
+    private SourceType sourceType = SourceType.FILE;
 
     @PrePersist
     protected void onCreate() {
@@ -59,7 +67,10 @@ public class MigrationRun {
             createdAt = Instant.now();
         }
         if (status == null) {
-            status = "PENDING";
+            status = RunStatus.PENDING;
+        }
+        if (sourceType == null) {
+            sourceType = SourceType.FILE;
         }
     }
 }

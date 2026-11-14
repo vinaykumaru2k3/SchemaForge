@@ -8,6 +8,7 @@ import {
   BarChart2, Search, Database, ArrowRight, RefreshCw, History,
 } from 'lucide-react';
 import { migrationApi } from '../api/migrationApi';
+import { getApiErrorMessage } from '../api/client';
 import type { AnalysisReport, ConvertedScript, ValidationResult, MigrationRun } from '../types';
 
 /* ─── Reusable sub-components ───────────────────────────────────── */
@@ -76,8 +77,7 @@ const Dashboard: React.FC = () => {
 
   React.useEffect(() => {
     if (reportError) {
-      const err = reportError as Error & { response?: { data?: { message?: string } } };
-      setError(err.response?.data?.message || 'Analysis failed.');
+      setError(getApiErrorMessage(reportError, 'Analysis failed.'));
     }
   }, [reportError]);
 
@@ -115,9 +115,9 @@ const Dashboard: React.FC = () => {
       queryClient.setQueryData(['script', runId], data);
       setTimeout(() => setConvertingScreen(false), 2000);
     },
-    onError: (err: Error & { response?: { data?: { message?: string } } }) => {
+    onError: (err) => {
       setConvertingScreen(false);
-      setError(err.response?.data?.message || 'Conversion failed.');
+      setError(getApiErrorMessage(err, 'Conversion failed.'));
     }
   });
 
@@ -130,8 +130,8 @@ const Dashboard: React.FC = () => {
       queryClient.setQueryData(['validation', runId], data);
       setActiveTab('validation');
     },
-    onError: (err: Error & { response?: { data?: { message?: string } } }) => {
-      setError(err.response?.data?.message || 'Validation failed.');
+    onError: (err) => {
+      setError(getApiErrorMessage(err, 'Validation failed.'));
     }
   });
 

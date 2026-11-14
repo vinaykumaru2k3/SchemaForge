@@ -1,52 +1,55 @@
 package com.schemaforge.security;
 
+import com.schemaforge.config.SchemaForgeProperties;
 import io.jsonwebtoken.Claims;
+import io.jsonwebtoken.JwtException;
 import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.SignatureAlgorithm;
 import io.jsonwebtoken.security.Keys;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
+import java.nio.charset.StandardCharsets;
 import java.security.Key;
 import java.util.Date;
+import java.util.Optional;
 
 @Component
 public class JwtUtil {
 
-    @Value("${jwt.secret:defaultSecretKeyThatIsAtLeast32BytesLongForHS256Algo}")
-    private String secret;
+    private final Key signingKey;
+    private final long expirationMillis;
 
-    @Value("${jwt.expiration:86400000}") // 1 day default
-    private long expirationTime;
-
-    private Key getSigningKey() {
-        return Keys.hmacShaKeyFor(secret.getBytes());
+    public JwtUtil(SchemaForgeProperties properties) {
+        SchemaForgeProperties.Jwt jwt = properties.jwt();
+        this.signingKey = Keys.hmacShaKeyFor(jwt.secret().getBytes(StandardCharsets.UTF_8));
+        this.expirationMillis = jwt.expiration().toMillis();
     }
 
     public String generateToken(String username) {
+        long now = System.currentTimeMillis();
         return Jwts.builder()
                 .setSubject(username)
-                .setIssuedAt(new Date())
-                .setExpiration(new Date(System.currentTimeMillis() + expirationTime))
-                .signWith(getSigningKey(), SignatureAlgorithm.HS256)
+                .setIssuedAt(new Date(now))
+                .setExpiration(new Date(now + expirationMillis))
+                .signWith(signingKey, SignatureAlgorithm.HS256)
                 .compact();
     }
 
-    public boolean validateToken(String token) {
+    /**
+     * Parses and verifies the token once.
+     *
+     * @return the subject (username) if the token is valid and unexpired, otherwise empty
+     */
+    public Optional<String> validateAndGetUsername(String token) {
         try {
-            Jwts.parserBuilder().setSigningKey(getSigningKey()).build().parseClaimsJws(token);
-            return true;
-        } catch (Exception e) {
-            return false;
+            Claims claims = Jwts.parserBuilder()
+                    .setSigningKey(signingKey)
+                    .build()
+                    .parseClaimsJws(token)
+                    .getBody();
+            return Optional.ofNullable(claims.getSubject());
+        } catch (JwtException | IllegalArgumentException e) {
+            return Optional.empty();
         }
-    }
-
-    public String extractUsername(String token) {
-        Claims claims = Jwts.parserBuilder()
-                .setSigningKey(getSigningKey())
-                .build()
-                .parseClaimsJws(token)
-                .getBody();
-        return claims.getSubject();
     }
 }

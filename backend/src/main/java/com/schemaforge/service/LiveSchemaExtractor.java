@@ -9,6 +9,7 @@ import com.schemaforge.model.OracleSource;
 import com.schemaforge.model.OracleView;
 import com.schemaforge.model.ParsedSchema;
 import com.schemaforge.model.Table;
+import com.schemaforge.security.ConnectionTargetGuard;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
@@ -46,8 +47,16 @@ public class LiveSchemaExtractor {
      * @return a fully populated ParsedSchema
      * @throws LiveExtractionException if the JDBC connection or any query fails
      */
+    private final ConnectionTargetGuard targetGuard;
+
+    public LiveSchemaExtractor(ConnectionTargetGuard targetGuard) {
+        this.targetGuard = targetGuard;
+    }
+
     public ParsedSchema extract(OracleConnectionConfig config) {
-        String url = config.buildJdbcUrl();
+        // Throws IllegalArgumentException (→ 400) if the host is blocked or unresolvable.
+        String resolvedHost = targetGuard.resolveAllowedHost(config.getHost());
+        String url = config.buildJdbcUrl(resolvedHost);
         String schema = config.getSchema();
 
         log.info("Starting live schema extraction from Oracle [{}] for schema [{}]", url, schema);
@@ -57,6 +66,9 @@ public class LiveSchemaExtractor {
         props.setProperty("password", new String(config.getPassword()));
         // Disable Oracle implicit statement caching to prevent credential caching
         props.setProperty("oracle.jdbc.implicitStatementCacheSize", "0");
+        // Fail fast on unreachable hosts instead of hanging the request thread.
+        props.setProperty("oracle.net.CONNECT_TIMEOUT", "10000");
+        props.setProperty("oracle.jdbc.ReadTimeout", "120000");
 
         ParsedSchema parsedSchema = new ParsedSchema();
 
@@ -77,8 +89,8 @@ public class LiveSchemaExtractor {
                     parsedSchema.getSources().size());
 
         } catch (SQLException e) {
-            log.error("Failed to connect or query Oracle: {}", e.getMessage());
-            throw new LiveExtractionException("Oracle extraction failed: " + e.getMessage(), e);
+            log.error("Failed to connect or query Oracle at [{}]: {}", url, e.getMessage());
+            throw new LiveExtractionException(describe(e), e);
         }
 
         return parsedSchema;
@@ -236,12 +248,12 @@ public class LiveSchemaExtractor {
         return new ArrayList<>(tableMap.values());
     }
 
-    private String mapConstraintType(String oracleType) {
+    private com.schemaforge.model.ConstraintType mapConstraintType(String oracleType) {
         return switch (oracleType) {
-            case "P" -> "PRIMARY KEY";
-            case "U" -> "UNIQUE";
-            case "R" -> "FOREIGN KEY";
-            default  -> oracleType;
+            case "P" -> com.schemaforge.model.ConstraintType.PRIMARY_KEY;
+            case "U" -> com.schemaforge.model.ConstraintType.UNIQUE;
+            case "R" -> com.schemaforge.model.ConstraintType.FOREIGN_KEY;
+            default  -> throw new IllegalStateException("Unexpected constraint type: " + oracleType);
         };
     }
 
@@ -355,6 +367,36 @@ public class LiveSchemaExtractor {
         }
         log.debug("Extracted {} stored program objects", sourceMap.size());
         return new ArrayList<>(sourceMap.values());
+    }
+
+    // ─── Error sanitising ────────────────────────────────────────────────────
+
+    private static final java.util.regex.Pattern ORA_CODE = java.util.regex.Pattern.compile("ORA-\\d{5}");
+
+    /**
+     * Turns a driver exception into a short, user-facing message. Raw driver messages can carry
+     * connection descriptors, internal host names and connection IDs, so they are never echoed as-is.
+     */
+    static String describe(SQLException e) {
+        String friendly = switch (e.getErrorCode()) {
+            case 1017 -> "Invalid username or password.";
+            case 28000 -> "The Oracle account is locked.";
+            case 12505, 12514 -> "The listener does not know the requested service name.";
+            case 12541 -> "No Oracle listener is running on that host and port.";
+            case 17002 -> "Could not reach the database host (network error or timeout).";
+            case 942 -> "The user cannot read the data dictionary views. Grant SELECT_CATALOG_ROLE or SELECT ANY DICTIONARY.";
+            case 1031 -> "Insufficient privileges to read the schema.";
+            default -> null;
+        };
+        if (friendly != null) {
+            return friendly;
+        }
+        String message = e.getMessage() == null ? "" : e.getMessage();
+        java.util.regex.Matcher m = ORA_CODE.matcher(message);
+        if (m.find()) {
+            return "Oracle returned " + m.group() + ". Check the server logs for details.";
+        }
+        return "Could not connect to or read from the Oracle database.";
     }
 
     // ─── Custom exception ────────────────────────────────────────────────────

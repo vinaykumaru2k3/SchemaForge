@@ -4,7 +4,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 public class Constraint {
-    private String type;
+    private ConstraintType type;
     private List<String> columns = new ArrayList<>();
     private String column;
 
@@ -12,8 +12,8 @@ public class Constraint {
     private String referencedTable;
     private List<String> referencedColumns = new ArrayList<>();
 
-    public String getType() { return type; }
-    public void setType(String type) { this.type = type; }
+    public ConstraintType getType() { return type; }
+    public void setType(ConstraintType type) { this.type = type; }
     public List<String> getColumns() { return columns; }
     public void setColumns(List<String> columns) { this.columns = columns; }
     public String getColumn() { return column; }

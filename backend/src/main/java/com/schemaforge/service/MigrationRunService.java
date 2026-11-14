@@ -1,5 +1,7 @@
 package com.schemaforge.service;
 
+import com.schemaforge.exception.ForbiddenException;
+import com.schemaforge.exception.NotFoundException;
 import com.schemaforge.model.MigrationRun;
 import com.schemaforge.model.ParsedSchema;
 import com.schemaforge.parser.SqlParser;
@@ -30,7 +32,7 @@ public class MigrationRunService {
     private com.schemaforge.model.User getCurrentUser() {
         String username = org.springframework.security.core.context.SecurityContextHolder.getContext().getAuthentication().getName();
         return userRepository.findByUsername(username)
-            .orElseThrow(() -> new IllegalArgumentException("Authenticated user not found in database"));
+            .orElseThrow(() -> new ForbiddenException("Authenticated user no longer exists."));
     }
 
     public MigrationRun uploadAndParse(MultipartFile file, String fileNameOverride) {
@@ -57,7 +59,7 @@ public class MigrationRunService {
             
             MigrationRun run = MigrationRun.builder()
                 .fileName(fileName)
-                .status("PARSED")
+                .status(com.schemaforge.model.RunStatus.PARSED)
                 .tableCount(tableCount)
                 .columnCount(colCount)
                 .rawSql(content)
@@ -96,13 +98,13 @@ public class MigrationRunService {
 
         MigrationRun run = MigrationRun.builder()
                 .fileName(schemaOwner + " (live)")
-                .status("PARSED")
+                .status(com.schemaforge.model.RunStatus.PARSED)
                 .tableCount(tableCount)
                 .columnCount(colCount)
                 .rawSql(rawSql)
                 .user(getCurrentUser())
                 .build();
-        run.setSourceType("LIVE_DB");
+        run.setSourceType(com.schemaforge.model.SourceType.LIVE_DB);
 
         run = migrationRunRepository.save(run);
         log.info("Created LIVE_DB run ID: {} for schema [{}]. Tables={}, Cols={}",
@@ -139,7 +141,7 @@ public class MigrationRunService {
             }
             // Append constraints
             for (com.schemaforge.model.Constraint c : table.getConstraints()) {
-                sb.append("  ,").append(c.getType()).append(" (")
+                sb.append("  ,").append(c.getType().sql()).append(" (")
                         .append(String.join(", ", c.getColumns())).append(")\n");
             }
             sb.append(");\n\n");
@@ -155,12 +157,11 @@ public class MigrationRunService {
     }
 
     public MigrationRun getMigrationRun(UUID runId) {
-        MigrationRun run = migrationRunRepository.findById(runId)
-                .orElseThrow(() -> new IllegalArgumentException("Migration run not found for ID: " + runId));
-        if (run.getUser() == null || !run.getUser().getId().equals(getCurrentUser().getId())) {
-            throw new IllegalArgumentException("Access Denied");
-        }
-        return run;
+        // Missing and not-owned runs both return 404 so run IDs belonging to other users are not revealed.
+        UUID userId = getCurrentUser().getId();
+        return migrationRunRepository.findById(runId)
+                .filter(run -> run.getUser() != null && run.getUser().getId().equals(userId))
+                .orElseThrow(() -> new NotFoundException("Migration run not found: " + runId));
     }
 
     public java.util.List<MigrationRun> getHistory(String fileName) {
