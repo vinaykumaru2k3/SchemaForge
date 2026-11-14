@@ -24,6 +24,7 @@ public class OracleConnectionConfig {
     private String username;
 
     // char[] to allow zeroing after use; Jackson deserialises from String automatically
+    @jakarta.validation.constraints.NotNull(message = "Password must not be blank")
     private char[] password;
 
     // Optional: restrict extraction to a specific schema owner (defaults to username)
@@ -51,7 +52,15 @@ public class OracleConnectionConfig {
      * Build the JDBC URL for Oracle Thin driver.
      */
     public String buildJdbcUrl() {
-        return String.format("jdbc:oracle:thin:@//%s:%d/%s", host, port, serviceName);
+        return buildJdbcUrl(host);
+    }
+
+    /**
+     * Build the JDBC URL against an already-resolved host (see ConnectionTargetGuard),
+     * so the connection goes to the address that was checked.
+     */
+    public String buildJdbcUrl(String resolvedHost) {
+        return String.format("jdbc:oracle:thin:@//%s:%d/%s", resolvedHost, port, serviceName);
     }
 
     /**

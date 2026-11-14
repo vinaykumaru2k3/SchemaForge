@@ -2,6 +2,7 @@ package com.schemaforge.parser;
 
 import com.schemaforge.model.Column;
 import com.schemaforge.model.Constraint;
+import com.schemaforge.model.ConstraintType;
 import com.schemaforge.model.ParsedSchema;
 import com.schemaforge.model.Table;
 import java.util.ArrayList;
@@ -32,7 +33,7 @@ public class SqlParser {
 
         // Remove comments from masked SQL
         String sql = maskedSql.replaceAll("--.*", "");
-        sql = sql.replaceAll("/\\*.*?\\*/", "");
+        sql = sql.replaceAll("(?s)/\\*.*?\\*/", "");
         sql = sql.replaceAll("\r\n", "\n"); // normalize line endings
         
         // Restore String Literals
@@ -99,16 +100,13 @@ public class SqlParser {
         if (ct.getIndexes() != null) {
             for (Index index : ct.getIndexes()) {
                 String type = index.getType() != null ? index.getType().toUpperCase() : "";
-                if (type.contains("PRIMARY KEY")) {
+                ConstraintType ctype = type.contains("PRIMARY KEY") ? ConstraintType.PRIMARY_KEY
+                        : type.contains("FOREIGN KEY") ? ConstraintType.FOREIGN_KEY
+                        : type.contains("UNIQUE") ? ConstraintType.UNIQUE
+                        : null;
+                if (ctype != null) {
                     Constraint c = new Constraint();
-                    c.setType("PRIMARY_KEY");
-                    for (net.sf.jsqlparser.statement.create.table.Index.ColumnParams col : index.getColumns()) {
-                        c.getColumns().add(col.getColumnName().replace("\"", ""));
-                    }
-                    table.getConstraints().add(c);
-                } else if (type.contains("FOREIGN KEY")) {
-                    Constraint c = new Constraint();
-                    c.setType("FOREIGN_KEY");
+                    c.setType(ctype);
                     for (net.sf.jsqlparser.statement.create.table.Index.ColumnParams col : index.getColumns()) {
                         c.getColumns().add(col.getColumnName().replace("\"", ""));
                     }
@@ -128,7 +126,8 @@ public class SqlParser {
             
             String upperPart = part.toUpperCase();
             
-            if (upperPart.startsWith("CONSTRAINT") || upperPart.startsWith("PRIMARY KEY") || upperPart.startsWith("FOREIGN KEY")) {
+            if (upperPart.startsWith("CONSTRAINT") || upperPart.startsWith("PRIMARY KEY")
+                    || upperPart.startsWith("FOREIGN KEY") || upperPart.startsWith("UNIQUE")) {
                 parseConstraint(part, table);
             } else {
                 parseColumn(part, table);
@@ -180,7 +179,7 @@ public class SqlParser {
         Pattern pkPattern = Pattern.compile("PRIMARY\\s+KEY\\s*\\(([^)]+)\\)", Pattern.CASE_INSENSITIVE);
         Matcher pkMatcher = pkPattern.matcher(part);
         if (pkMatcher.find()) {
-            constraint.setType("PRIMARY_KEY");
+            constraint.setType(ConstraintType.PRIMARY_KEY);
             String[] cols = pkMatcher.group(1).split(",");
             for (String c : cols) {
                 constraint.getColumns().add(c.trim().replace("\"", ""));
@@ -192,13 +191,23 @@ public class SqlParser {
         Pattern fkPattern = Pattern.compile("FOREIGN\\s+KEY\\s*\\(([^)]+)\\)", Pattern.CASE_INSENSITIVE);
         Matcher fkMatcher = fkPattern.matcher(part);
         if (fkMatcher.find()) {
-            constraint.setType("FOREIGN_KEY");
+            constraint.setType(ConstraintType.FOREIGN_KEY);
             String[] cols = fkMatcher.group(1).split(",");
             for (String c : cols) {
                 constraint.getColumns().add(c.trim().replace("\"", ""));
             }
             table.getConstraints().add(constraint);
             return;
+        }
+
+        Pattern uqPattern = Pattern.compile("UNIQUE\\s*\\(([^)]+)\\)", Pattern.CASE_INSENSITIVE);
+        Matcher uqMatcher = uqPattern.matcher(part);
+        if (uqMatcher.find()) {
+            constraint.setType(ConstraintType.UNIQUE);
+            for (String c : uqMatcher.group(1).split(",")) {
+                constraint.getColumns().add(c.trim().replace("\"", ""));
+            }
+            table.getConstraints().add(constraint);
         }
     }
 

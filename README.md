@@ -164,7 +164,7 @@ schema-forge/
 |   |   |-- dto/                      Request/response DTOs
 |   |   `-- exception/                GlobalExceptionHandler + ApiErrorResponse
 |   |-- src/main/resources/
-|   |   |-- application.properties
+|   |   |-- application.yml (+ application-dev.yml)
 |   |   `-- db/migration/             Flyway versioned scripts (V1 through V5)
 |   |-- src/test/                     JUnit 5 unit tests
 |   `-- pom.xml
@@ -239,30 +239,29 @@ cd MP_OPSQL/backend
 # Build, skipping tests on first run
 mvn clean install -DskipTests
 
-# Start the server
-mvn spring-boot:run
+# Start the server with the local-development profile
+SPRING_PROFILES_ACTIVE=dev mvn spring-boot:run
 ```
 
-The server starts at `http://localhost:8080`. Verify:
+The server starts at `http://localhost:8080`. Unauthenticated API calls return `401`:
 
 ```bash
-curl http://localhost:8080/api/v1/migrations
-# Expected: HTTP 200, response body: []
+curl -i http://localhost:8080/api/v1/migrations/history
+# Expected: HTTP 401
 ```
 
-Configure `src/main/resources/application.properties`:
+Configuration lives in `src/main/resources/application.yml` and is driven by environment
+variables (see [Configuration Reference](#configuration-reference)). No secrets are committed.
+The `dev` profile (`application-dev.yml`) supplies the local database password and an
+insecure development JWT secret so the app boots without extra setup. **Never use the `dev`
+profile outside your machine.** For personal overrides, create `application-local.yml`
+(git-ignored) and run with `SPRING_PROFILES_ACTIVE=dev,local`.
 
-```properties
-spring.datasource.url=jdbc:postgresql://localhost:5432/migration_db
-spring.datasource.username=migration_user
-spring.datasource.password=migration_pass
-spring.jpa.hibernate.ddl-auto=validate
-spring.jpa.show-sql=false
-spring.servlet.multipart.max-file-size=10MB
-spring.servlet.multipart.max-request-size=10MB
-server.port=8080
-logging.level.com.schemaforge=DEBUG
-logging.file.name=logs/migration-tool.log
+Without the `dev` profile the backend refuses to start unless `JWT_SECRET` is set to at least
+32 bytes, for example:
+
+```bash
+export JWT_SECRET="$(openssl rand -base64 48)"
 ```
 
 ### 3. Frontend Setup
@@ -294,10 +293,15 @@ docker-compose down
 |---|---|---|---|
 | `DB_URL` | `jdbc:postgresql://localhost:5432/migration_db` | PostgreSQL JDBC URL | Yes |
 | `DB_USER` | `migration_user` | Database username | Yes |
-| `DB_PASS` | `migration_pass` | Database password | Yes |
+| `DB_PASS` | *(empty; `migration_pass` in `dev`)* | Database password | Yes |
+| `JWT_SECRET` | *(none; dev-only value in `dev`)* | HMAC key for signing tokens, at least 32 bytes. Startup fails without it. | Yes |
+| `JWT_EXPIRATION` | `PT24H` | Token lifetime (ISO-8601 duration) | No |
+| `FRONTEND_URL` | `http://localhost:5173` | Allowed CORS origin(s), comma-separated | No |
+| `ALLOWED_DB_HOSTS` | *(empty = any)* | Comma-separated allowlist of Oracle hosts users may connect to. Link-local and cloud-metadata addresses are always blocked. | No |
+| `AUTH_RATE_LIMIT` | `10` | Login/register attempts per client IP per minute | No |
 | `SERVER_PORT` | `8080` | Spring Boot port | No |
-| `MAX_FILE_SIZE` | `10MB` | Max SQL file upload size | No |
-| `LOG_LEVEL` | `DEBUG` | Application log level | No |
+| `LOG_LEVEL` | `INFO` (`DEBUG` in `dev`) | Application log level | No |
+| `SPRING_PROFILES_ACTIVE` | *(none)* | Set to `dev` for local development defaults | No |
 
 ---
 
@@ -358,6 +362,8 @@ All errors return a consistent JSON structure — stack traces are never exposed
 }
 ```
 
+Validation failures add a `fieldErrors` object mapping each invalid field to its message.
+
 ### HTTP Status Code Reference
 
 | Code | Name | When Used |
@@ -365,13 +371,15 @@ All errors return a consistent JSON structure — stack traces are never exposed
 | `200` | OK | Successful GET or non-creation POST |
 | `201` | Created | Successful `POST /upload` |
 | `204` | No Content | Successful DELETE |
-| `400` | Bad Request | Invalid file type, empty file, malformed request |
-| `404` | Not Found | Resource with given ID does not exist |
-| `409` | Conflict | Action cannot be performed in the current state |
+| `400` | Bad Request | Invalid file type, empty file, malformed request, failed field validation, blocked connection host |
+| `401` | Unauthorized | Missing, invalid or expired token; wrong login credentials |
+| `403` | Forbidden | Authenticated, but the account no longer exists |
+| `404` | Not Found | Resource does not exist **or belongs to another user** |
+| `409` | Conflict | Username already taken |
 | `413` | Payload Too Large | File exceeds 10 MB |
-| `422` | Unprocessable Entity | SQL file is syntactically invalid |
+| `429` | Too Many Requests | Login/register rate limit hit (see `Retry-After`) |
 | `500` | Internal Server Error | Unexpected exception — see server logs |
-| `503` | Service Unavailable | Database connection failure |
+| `502` | Bad Gateway | Live Oracle connection or extraction failed |
 
 ---
 
@@ -567,11 +575,14 @@ This project follows the Conventional Commits specification.
 
 | Limitation | Detail | Recommended Action |
 |---|---|---|
-| **Authentication Enforcement** | Application endpoints are currently open without user authentication. | Implement Spring Security with JWT before exposing to a live production network. |
-| **PL/SQL Block Conversion** | Full PL/SQL block conversion is not automated. Stored procedures, packages, and triggers are flagged `HIGH` severity. | Manual architectural redesign and code migration is required for PL/SQL blocks. |
-| **Complex Function Nesting** | Chained Oracle functions like `NVL(NVL(a, b), c)` require recursive replacement logic which is not fully supported. | Break down complex nested Oracle functions into standard SQL prior to conversion. |
-| **ROWNUM Sensitivity** | `ROWNUM` inside complex nested subqueries versus top-level `WHERE` conditions require different translation paradigms. | The converter handles basic `LIMIT` cases; complex implicit pagination must be manually verified. |
-| **Database Validation** | Validation currently mocks data integrity checks using simulated data volumes. | To run live production verification, replace the mock logic in `ValidationService` with a dynamic `JdbcTemplate` connecting to a live Oracle target. |
+| **Validation is simulated** | `ValidationService` does not query any database; row counts are derived from table names. Results are illustrative only. | Do not rely on validation results. Real source/target comparison is planned. |
+| **No data copy or apply** | The tool produces a PostgreSQL script but does not execute it or move data. | Review and run the script yourself (e.g. with `psql`). |
+| **Regex-based conversion** | DDL conversion relies on regular expressions, so unusual formatting, quoted identifiers and Oracle storage clauses can be mangled. | Always review the converted script before running it. |
+| **Live extraction loses detail** | Live extraction ignores `NUMBER` precision/scale, column defaults and CHECK constraints, and multi-column indexes are not grouped. | Prefer uploading a DDL export for now if those details matter. |
+| **PL/SQL Block Conversion** | Stored procedures, packages and triggers are flagged `HIGH` severity but not converted. | Manual migration is required for PL/SQL. |
+| **Complex Function Nesting** | Nested Oracle functions like `NVL(NVL(a, b), c)` are not fully rewritten. | Simplify nested functions before conversion or fix them in review. |
+| **ROWNUM Sensitivity** | Only simple top-level `ROWNUM` filters become `LIMIT`. | Verify complex pagination manually. |
+| **Single-instance rate limiting** | Login rate limits are kept in memory per backend instance. | Put a reverse proxy rate limit in front when running several instances. |
 
 ---
 

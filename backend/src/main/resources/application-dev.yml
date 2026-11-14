@@ -1,0 +1,14 @@
+# Local development profile. Activate with SPRING_PROFILES_ACTIVE=dev.
+# These values are for a local docker-compose Postgres only; never use this profile in production.
+
+spring:
+  datasource:
+    password: ${DB_PASS:migration_pass}
+
+logging:
+  level:
+    com.schemaforge: DEBUG
+
+schemaforge:
+  jwt:
+    secret: ${JWT_SECRET:dev-only-insecure-secret-change-me-0123456789abcdef}

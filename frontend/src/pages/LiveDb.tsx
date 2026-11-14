@@ -5,6 +5,7 @@ import {
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { migrationApi } from '../api/migrationApi';
+import { getApiErrorMessage } from '../api/client';
 
 const card = 'bg-white dark:bg-zinc-900/50 backdrop-blur-md border border-zinc-200 dark:border-white/10 shadow-sm dark:shadow-[0_0_20px_rgba(0,0,0,0.2)]';
 
@@ -44,13 +45,8 @@ const LiveDbPage: React.FC = () => {
       setSuccess({ tableCount: result.tableCount ?? 0, columnCount: result.columnCount ?? 0, id: result.id });
       localStorage.setItem('lastRunId', result.id);
       setTimeout(() => navigate(`/dashboard?runId=${result.id}`), 1600);
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    } catch (err: any) {
-      setError(
-        err.response?.data?.error ||
-        err.response?.data?.message ||
-        'Failed to connect to Oracle database. Check your credentials and network.'
-      );
+    } catch (err) {
+      setError(getApiErrorMessage(err, 'Failed to connect to Oracle database. Check your credentials and network.'));
     } finally {
       setConnecting(false);
     }

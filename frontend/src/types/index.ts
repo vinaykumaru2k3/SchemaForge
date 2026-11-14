@@ -1,7 +1,8 @@
 export interface MigrationRun {
   id: string;
   fileName: string;
-  status: 'PENDING' | 'PARSED' | 'ANALYZED' | 'CONVERTED';
+  status: 'PENDING' | 'PARSED' | 'ANALYZED' | 'CONVERTED' | 'VALIDATED' | 'FAILED';
+  sourceType?: 'FILE' | 'LIVE_DB';
   tableCount: number;
   columnCount: number;
   createdAt: string;

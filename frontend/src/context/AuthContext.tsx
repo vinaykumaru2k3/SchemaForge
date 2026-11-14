@@ -1,4 +1,6 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useCallback, useContext, useEffect, useState } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
+import { TOKEN_KEY, setUnauthorizedHandler } from '../api/client';
 
 interface AuthContextType {
   token: string | null;
@@ -9,34 +11,46 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
+function usernameFromToken(token: string | null): string | null {
+  if (!token) return null;
+  try {
+    const payload = JSON.parse(atob(token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/')));
+    return payload.sub || null;
+  } catch {
+    return null;
+  }
+}
+
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [token, setToken] = useState<string | null>(localStorage.getItem('token'));
-  const [username, setUsername] = useState<string | null>(null);
+  const queryClient = useQueryClient();
+  const [token, setToken] = useState<string | null>(localStorage.getItem(TOKEN_KEY));
+  const username = usernameFromToken(token);
 
   useEffect(() => {
     if (token) {
-      localStorage.setItem('token', token);
-      try {
-        const payload = JSON.parse(atob(token.split('.')[1]));
-        setUsername(payload.sub || null);
-      } catch {
-        console.error("Invalid token format");
-        setUsername(null);
-      }
+      localStorage.setItem(TOKEN_KEY, token);
     } else {
-      localStorage.removeItem('token');
+      localStorage.removeItem(TOKEN_KEY);
       localStorage.removeItem('lastRunId');
-      setUsername(null);
     }
   }, [token]);
 
-  const login = (newToken: string) => {
+  const login = useCallback((newToken: string) => {
+    // Drop anything cached for a previous user before switching identity.
+    queryClient.clear();
     setToken(newToken);
-  };
+  }, [queryClient]);
 
-  const logout = () => {
+  const logout = useCallback(() => {
+    localStorage.removeItem(TOKEN_KEY);
+    queryClient.clear();
     setToken(null);
-  };
+  }, [queryClient]);
+
+  useEffect(() => {
+    setUnauthorizedHandler(logout);
+    return () => setUnauthorizedHandler(null);
+  }, [logout]);
 
   return (
     <AuthContext.Provider value={{ token, username, login, logout }}>

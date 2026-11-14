@@ -1,5 +1,6 @@
 package com.schemaforge.service;
 
+import com.schemaforge.exception.NotFoundException;
 import com.schemaforge.model.MigrationRun;
 import com.schemaforge.model.ParsedSchema;
 import com.schemaforge.parser.SqlParser;
@@ -91,7 +92,7 @@ public class SchemaService {
     public AnalysisReportDto getAnalysis(UUID runId) {
         migrationRunService.getMigrationRun(runId);
         AnalysisReport report = analysisReportRepository.findById(runId)
-                .orElseThrow(() -> new IllegalArgumentException("Analysis report not found for ID: " + runId));
+                .orElseThrow(() -> new NotFoundException("Analysis report not found for run: " + runId));
 
         return AnalysisReportDto.builder()
                 .migrationRunId(report.getMigrationRunId())
@@ -114,7 +115,7 @@ public class SchemaService {
         // converter so the output is properly ordered (Sequences → Tables → Indexes → Views).
         // FILE runs: use the classic string-based converter.
         String convertedSql;
-        if ("LIVE_DB".equals(run.getSourceType())) {
+        if (run.getSourceType() == com.schemaforge.model.SourceType.LIVE_DB) {
             com.schemaforge.model.ParsedSchema schema = sqlParser.parse(rawSql);
             convertedSql = sqlConverter.convertFromSchema(schema);
         } else {
@@ -146,7 +147,7 @@ public class SchemaService {
     public ConvertedScriptDto getConvertedScript(UUID runId) {
         migrationRunService.getMigrationRun(runId);
         ConvertedScript script = convertedScriptRepository.findById(runId)
-                .orElseThrow(() -> new IllegalArgumentException("Converted script not found for ID: " + runId));
+                .orElseThrow(() -> new NotFoundException("Converted script not found for run: " + runId));
 
         return ConvertedScriptDto.builder()
                 .migrationRunId(script.getMigrationRunId())
@@ -161,21 +162,21 @@ public class SchemaService {
         AnalysisReportDto analysis = null;
         try {
             analysis = getAnalysis(id);
-        } catch (Exception e) {
+        } catch (NotFoundException e) {
             log.debug("No analysis report found for {}", id);
         }
 
         ConvertedScriptDto convertedScript = null;
         try {
             convertedScript = getConvertedScript(id);
-        } catch (Exception e) {
+        } catch (NotFoundException e) {
             log.debug("No converted script found for {}", id);
         }
 
         ValidationResultDto validationResult = null;
         try {
             validationResult = validationService.getValidationResult(id);
-        } catch (Exception e) {
+        } catch (NotFoundException e) {
             log.debug("No validation result found for {}", id);
         }
 

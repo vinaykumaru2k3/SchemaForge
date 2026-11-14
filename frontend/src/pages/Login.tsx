@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { authApi } from '../api/authApi';
+import { getApiErrorMessage } from '../api/client';
 import { Loader2, Lock, AlertCircle } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { useAuth } from '../context/AuthContext';
@@ -24,11 +25,8 @@ const Login: React.FC = () => {
         : await authApi.login(username, password);
       login(res.token);
       navigate('/upload');
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    } catch (err: any) {
-      const data = err.response?.data;
-      const errorMsg = typeof data === 'string' ? data : (data?.message || 'Invalid credentials');
-      setError(errorMsg);
+    } catch (err) {
+      setError(getApiErrorMessage(err, isRegister ? 'Registration failed.' : 'Invalid username or password.'));
     } finally {
       setLoading(false);
     }

@@ -97,12 +97,12 @@ public class SqlConverter {
         // ── 4. FOREIGN KEY CONSTRAINTS ───────────────────────────────────────
         boolean hasFk = schema.getTables().stream()
                 .anyMatch(t -> t.getConstraints().stream()
-                        .anyMatch(c -> "FOREIGN KEY".equalsIgnoreCase(c.getType())));
+                        .anyMatch(c -> c.getType() == com.schemaforge.model.ConstraintType.FOREIGN_KEY));
         if (hasFk) {
             sb.append("-- ── Foreign Keys ───────────────────────────────────────────\n");
             for (com.schemaforge.model.Table table : schema.getTables()) {
                 for (com.schemaforge.model.Constraint c : table.getConstraints()) {
-                    if ("FOREIGN KEY".equalsIgnoreCase(c.getType())) {
+                    if (c.getType() == com.schemaforge.model.ConstraintType.FOREIGN_KEY) {
                         String fkCols = String.join(", ",
                                 c.getColumns().stream().map(this::pgName).toList());
                         String constraintName = "fk_" + pgName(table.getName()) + "_"
@@ -169,11 +169,11 @@ public class SqlConverter {
 
         // PK and UNIQUE constraints (not FK — those come later)
         for (com.schemaforge.model.Constraint c : table.getConstraints()) {
-            if ("PRIMARY KEY".equalsIgnoreCase(c.getType()) || "UNIQUE".equalsIgnoreCase(c.getType())) {
-                lines.add("  " + c.getType() + " (" +
+            if (c.getType() == com.schemaforge.model.ConstraintType.PRIMARY_KEY || c.getType() == com.schemaforge.model.ConstraintType.UNIQUE) {
+                lines.add("  " + c.getType().sql() + " (" +
                         String.join(", ", c.getColumns().stream().map(this::pgName).toList()) + ")");
             }
-            if (includeFk && "FOREIGN KEY".equalsIgnoreCase(c.getType())) {
+            if (includeFk && c.getType() == com.schemaforge.model.ConstraintType.FOREIGN_KEY) {
                 lines.add("  FOREIGN KEY (" +
                         String.join(", ", c.getColumns().stream().map(this::pgName).toList()) + ")");
             }

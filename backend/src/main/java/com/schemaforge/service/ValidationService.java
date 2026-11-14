@@ -2,6 +2,7 @@ package com.schemaforge.service;
 
 import com.schemaforge.dto.TableValidationMetricDto;
 import com.schemaforge.dto.ValidationResultDto;
+import com.schemaforge.exception.NotFoundException;
 import com.schemaforge.model.*;
 import com.schemaforge.parser.SqlParser;
 import com.schemaforge.repository.MigrationRunRepository;
@@ -93,7 +94,7 @@ public class ValidationService {
     public ValidationResultDto getValidationResult(UUID migrationId) {
         migrationRunService.getMigrationRun(migrationId);
         ValidationResult result = validationResultRepository.findById(migrationId)
-                .orElseThrow(() -> new IllegalArgumentException("Validation result not found for ID: " + migrationId));
+                .orElseThrow(() -> new NotFoundException("Validation result not found for run: " + migrationId));
         return mapToDto(result);
     }
 

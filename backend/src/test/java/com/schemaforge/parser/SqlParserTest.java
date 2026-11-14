@@ -48,7 +48,7 @@ public class SqlParserTest {
         ParsedSchema schema = sqlParser.parse(sql);
         Table table = schema.getTables().get(0);
         assertEquals(1, table.getConstraints().size());
-        assertEquals("PRIMARY_KEY", table.getConstraints().get(0).getType());
+        assertEquals(com.schemaforge.model.ConstraintType.PRIMARY_KEY, table.getConstraints().get(0).getType());
         assertEquals("id", table.getConstraints().get(0).getColumns().get(0));
     }
 
@@ -58,7 +58,7 @@ public class SqlParserTest {
         ParsedSchema schema = sqlParser.parse(sql);
         Table table = schema.getTables().get(0);
         assertEquals(1, table.getConstraints().size());
-        assertEquals("PRIMARY_KEY", table.getConstraints().get(0).getType());
+        assertEquals(com.schemaforge.model.ConstraintType.PRIMARY_KEY, table.getConstraints().get(0).getType());
         assertEquals(2, table.getConstraints().get(0).getColumns().size());
         assertEquals("order_id", table.getConstraints().get(0).getColumns().get(0));
         assertEquals("line_num", table.getConstraints().get(0).getColumns().get(1));
@@ -70,7 +70,7 @@ public class SqlParserTest {
         ParsedSchema schema = sqlParser.parse(sql);
         Table table = schema.getTables().get(0);
         assertEquals(1, table.getConstraints().size());
-        assertEquals("FOREIGN_KEY", table.getConstraints().get(0).getType());
+        assertEquals(com.schemaforge.model.ConstraintType.FOREIGN_KEY, table.getConstraints().get(0).getType());
         assertEquals("user_id", table.getConstraints().get(0).getColumns().get(0));
     }
 
